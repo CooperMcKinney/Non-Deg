@@ -1,40 +1,53 @@
-import altair as alt
-import numpy as np
-import pandas as pd
 import streamlit as st
+import os
+import re
+from collections import Counter
+from io import BytesIO
 
-"""
-# Welcome to Streamlit!
+def reverse_complement_sequence(sequence):
+    # Define the complement mapping
+    complement = str.maketrans('ACGTacgt', 'TGCAtgca')
+    # Reverse complement the sequence
+    return sequence.translate(complement)[::-1]
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:.
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+def extract_pattern(sequence, pattern):
+    return re.findall(pattern, sequence)
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+def sort_and_count_sequences(sequences):
+    sorted_sequences = sorted(sequences)
+    sequence_counts = Counter(sorted_sequences)
+    sorted_counts = sorted(sequence_counts.items(), key=lambda item: item[1], reverse=True)
+    return sorted_counts
 
-num_points = st.slider("Number of points in spiral", 1, 10000, 1100)
-num_turns = st.slider("Number of turns in spiral", 1, 300, 31)
+st.title("UMI Sequence Analysis")
 
-indices = np.linspace(0, 1, num_points)
-theta = 2 * np.pi * num_turns * indices
-radius = indices
+uploaded_file = st.file_uploader("Upload a FASTQ or FASTQSanger file", type=["fastq", "fastqsanger", "txt"])
 
-x = radius * np.cos(theta)
-y = radius * np.sin(theta)
-
-df = pd.DataFrame({
-    "x": x,
-    "y": y,
-    "idx": indices,
-    "rand": np.random.randn(num_points),
-})
-
-st.altair_chart(alt.Chart(df, height=700, width=700)
-    .mark_point(filled=True)
-    .encode(
-        x=alt.X("x", axis=None),
-        y=alt.Y("y", axis=None),
-        color=alt.Color("idx", legend=None, scale=alt.Scale()),
-        size=alt.Size("rand", legend=None, scale=alt.Scale(range=[1, 150])),
-    ))
+if uploaded_file is not None:
+    sequence = uploaded_file.getvalue().decode("utf-8").strip()
+    
+    reverse_complement = reverse_complement_sequence(sequence)
+    
+    pattern = "GTGCAC...........CTAA.A.A......TACC.GA."
+    matches = extract_pattern(reverse_complement, pattern)
+    
+    degseq_pattern = "CTAA.A.A......TACC"
+    degseq_matches = extract_pattern("\n".join(matches), degseq_pattern)
+    
+    sorted_counts = sort_and_count_sequences(degseq_matches)
+    
+    st.write("### Sorted Unique Sequences by Frequency")
+    sorted_counts_text = "\n".join([f"{count} {seq}" for seq, count in sorted_counts])
+    st.text(sorted_counts_text)
+    
+    # Prepare the sorted counts for download
+    sorted_counts_file = BytesIO()
+    sorted_counts_file.write(sorted_counts_text.encode())
+    sorted_counts_file.seek(0)
+    
+    st.download_button(
+        label="Download Sorted Unique Sequences",
+        data=sorted_counts_file,
+        file_name="sorted_unique_sequences.txt",
+        mime="text/plain"
+    )
